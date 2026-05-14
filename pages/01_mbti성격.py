@@ -94,4 +94,4 @@ if selected_mbti:
             st.write(f"💰 **평균 연봉:** {item['연봉']}")
             st.write("---")
 
-st.caption("※ 연봉 및 직업 정보는 통
+st.caption("※ 연봉 및 직업 정보는 통계치를 바탕으로 한 대략적인 수치이니 참고용으로만 봐줘! 네 꿈을 응원해! 🔥")
