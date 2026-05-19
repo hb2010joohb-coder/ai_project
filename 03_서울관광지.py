@@ -2,7 +2,6 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 
-# [중요] 반드시 다른 모든 st. 함수보다 가장 위에 위치해야 합니다!
 st.set_page_config(
     page_title="Seoul Top 10 Tourist Spots",
     page_icon="🗺️",
