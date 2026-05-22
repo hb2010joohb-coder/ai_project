@@ -4,10 +4,9 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import urllib.request
 
-# 1. 스트림릿 클라우드 환경을 위한 한글 폰트 설정 (나눔고딕 웹 다운로드 방식)
+# 1. 스트림릿 클라우드 환경을 위한 한글 폰트 설정
 @st.cache_data
 def load_korean_font():
-    # 나눔고딕 폰트 다운로드 URL
     font_url = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
     font_path = "NanumGothic-Regular.ttf"
     try:
@@ -15,7 +14,6 @@ def load_korean_font():
         fe = fm.FontEntry(fname=font_path, name='NanumGothic')
         fm.font_manager.ttflist.insert(0, fe)
         plt.rcParams['font.family'] = 'NanumGothic'
-        # 마이너스 기호 깨짐 방지
         plt.rcParams['axes.unicode_minus'] = False
     except Exception as e:
         st.warning(f"한글 폰트 로드 중 오류가 발생했습니다. 기본 폰트를 사용합니다. ({e})")
@@ -25,8 +23,7 @@ load_korean_font()
 # 2. 데이터 불러오기 및 전처리
 @st.cache_data
 def load_data():
-    # 인코딩 에러 해결을 위해 encoding="cp949" 옵션을 추가합니다.
-    # 만약 그래도 에러가 난다면 "euc-kr"로 변경해보세요.
+    # 인코딩 에러 방지를 위해 cp949 적용
     df = pd.read_csv("population.csv", encoding="cp949")
     
     # 마지막 컬럼명 오타('ㅏ100세 이상') 수정 및 통일
@@ -41,10 +38,11 @@ def load_data():
         df[col] = df[col].astype(str).str.replace(',', '').astype(int)
         
     return df, age_columns
+
 try:
     df, age_cols = load_data()
 except Exception as e:
-    st.error(f"데이터 파일을 읽어오는 데 실패했습니다. 'population.csv' 파일이 올바른 위치에 있는지 확인해주세요. 에러: {e}")
+    st.error(f"데이터 파일을 읽어오는 데 실패했습니다. 'population.csv' 파일의 인코딩을 확인해주세요. 에러: {e}")
     st.stop()
 
 # 3. 스트림릿 UI 구성
@@ -63,38 +61,55 @@ selected_data = df[df['행정구역_표시'] == selected_region].iloc[0]
 population_values = [selected_data[col] for col in age_cols]
 
 # 4. 그래프 그리기
-# 그래프 크기 설정
-fig, ax = plt.subplots(figsize=(10, 6))
+fig, ax = plt.subplots(figsize=(10, 5))
 
-# [조건 4] 그래프 바탕색 설정 (연한 보라색: #F3E5F5 또는 #E8EAF6 계열)
-# ax.set_facecolor: 데이터가 그려지는 내부 플롯 바탕색
-# fig.set_facecolor: 외부 여백을 포함한 전체 바탕색
+# 그래프 바탕색 설정 (연한 보라색 계열)
 fig.patch.set_facecolor('#F0E6FF') 
 ax.set_facecolor('#F8F3FF')
 
-# [조건 2, 4] 꺾은선 그래프 그리기 (그래프 색: 빨간색, 마커 추가로 가시성 확보)
+# 꺾은선 그래프 그리기 (빨간색)
 ax.plot(age_cols, population_values, color='red', marker='o', linewidth=2, markersize=6)
 
-# [조건 3] 그래프 제목 및 레이블 설정
+# 그래프 제목 및 레이블 설정
 ax.set_title("서울시의 인구통계", fontsize=16, fontweight='bold', pad=15)
 ax.set_xlabel("연령대", fontsize=12, labelpad=10)
 ax.set_ylabel("인구수 (명)", fontsize=12, labelpad=10)
 
-# 스타일 보완 (그리드 선 추가, 천단위 콤마 적용)
+# 스타일 보완
 ax.grid(True, linestyle='--', alpha=0.5, color='#D1C4E9')
 ax.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:,}".format(int(x))))
-
-# X축 글자 기울임 (겹침 방지)
 plt.xticks(rotation=45)
 plt.tight_layout()
 
 # 스트림릿에 그래프 출력
 st.pyplot(fig)
 
-# 데이터 테이블 별도 출력 (선택사항)
-with st.expander("📊 상세 데이터 보기"):
-    detail_df = pd.DataFrame({
-        '연령대': age_cols,
-        '인구수(명)': [f"{val:,}" for val in population_values]
-    })
-    st.dataframe(detail_df.set_index('연령대'), use_container_width=True)
+
+# ==========================================
+# [추가 기능] 5. 연령대별 인구가 많은 자치구 요약 정보
+# ==========================================
+st.markdown("---")
+st.header("🏆 연령대별 인구 최다 자치구 TOP 3")
+st.markdown("전체 서울시 데이터를 제외한 25개 자치구 중에서 인구가 가장 많은 구를 분석한 결과입니다.")
+
+# '서울특별시' 전체 데이터를 제외하고 자치구만 필터링
+# 보통 자치구는 행정구역 표시 이름이 '서울특별시'보다 깁니다 (예: 서울특별시 종로구)
+gu_df = df[df['행정구역_표시'] != '서울특별시'].copy()
+
+# 탭을 활용해 모든 연령대를 깔끔하게 나누어 시각화
+tabs = st.tabs(age_cols)
+
+for i, age_col in enumerate(age_cols):
+    with tabs[i]:
+        st.subheader(f"🥇 {age_col} 인구가 가장 많은 자치구")
+        
+        # 해당 연령대 기준 내림차순 정렬 후 상위 3개 추출
+        top3 = gu_df.sort_values(by=age_col, ascending=False).head(3)
+        
+        # 가독성 좋은 카드 세 개 배치
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric(
+                label="1위 🥇", 
+                value=
