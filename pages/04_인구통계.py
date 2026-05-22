@@ -25,8 +25,9 @@ load_korean_font()
 # 2. 데이터 불러오기 및 전처리
 @st.cache_data
 def load_data():
-    # 파일 경로를 상황에 맞게 수정하세요 (동일 폴더 내에 있을 경우 'population.csv')
-    df = pd.read_csv("population.csv")
+    # 인코딩 에러 해결을 위해 encoding="cp949" 옵션을 추가합니다.
+    # 만약 그래도 에러가 난다면 "euc-kr"로 변경해보세요.
+    df = pd.read_csv("population.csv", encoding="cp949")
     
     # 마지막 컬럼명 오타('ㅏ100세 이상') 수정 및 통일
     df.columns = [col.replace('ㅏ', '') for col in df.columns]
@@ -40,7 +41,6 @@ def load_data():
         df[col] = df[col].astype(str).str.replace(',', '').astype(int)
         
     return df, age_columns
-
 try:
     df, age_cols = load_data()
 except Exception as e:
