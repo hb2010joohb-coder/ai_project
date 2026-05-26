@@ -4,6 +4,4 @@ plotly
 streamlit>=1.30.0
 pandas>=2.0.0
 matplotlib>=3.7.0
-streamlit>=1.30.0
-pandas>=2.0.0
 matplotlib>=3.8.0
