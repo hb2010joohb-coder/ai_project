@@ -73,8 +73,8 @@ if df is not None:
         fig, ax = plt.subplots(figsize=(10, 5))
         
         # 최고기온은 핫핑크(hotpink), 최저기온은 연한 파란색(lightblue)으로 지정
-        ax.plot(filtered_df['연도'], filtered_df['최고기온(℃)'], color='hotpink', marker='o', shortcuts=None, markersize=3, label='Max Temp (최고기온)')
-        ax.plot(filtered_df['연도'], filtered_df['최저기온(℃)'], color='lightblue', marker='o', shortcuts=None, markersize=3, label='Min Temp (최저기온)')
+ax.plot(filtered_df['연도'], filtered_df['최고기온(℃)'], color='hotpink', marker='o', markersize=3, label='Max Temp (최고기온)')
+ax.plot(filtered_df['연도'], filtered_df['최저기온(℃)'], color='lightblue', marker='o', markersize=3, label='Min Temp (최저기온)')
         
         # [조건 반영] 그래프 제목, 가로축(연도), 세로축(온도) 설정
         ax.set_title("날짜별 기온분석 (Temperature Analysis by Date)", fontsize=14, pad=15)
