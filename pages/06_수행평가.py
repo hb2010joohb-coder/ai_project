@@ -3,22 +3,33 @@ import requests
 import pandas as pd
 import plotly.express as px
 
-# --- 라이엇 API 키 설정 (보내주신 키 적용 완료) ---
-# 개발자 키는 24시간 후 만료되므로 에러 발생 시 재발급받아 이 부분을 교체하세요.
+# --- 라이엇 API 키 설정 ---
 RIOT_API_KEY = "RGAPI-f2ce4526-c335-4dcb-a29b-2a77c49ca800" 
 
-# 지역 설정 (한국 서버 및 아시아 대륙 기준)
 ACCOUNT_ROUTE = "asia"
 GAME_ROUTE = "kr"
 
 def get_puuid(game_name, tag_line):
-    """Riot ID로 유저의 고유 ID(PUUID)를 가져옵니다."""
+    """Riot ID로 유저의 고유 ID(PUUID)를 가져옵니다. (에러 진단 추가)"""
     url = f"https://{ACCOUNT_ROUTE}.api.riotgames.com/riot/account/v1/accounts/by-game-name/{game_name}/{tag_line}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
+    
+    try:
+        response = requests.get(url, headers=headers)
+        # 200(정상)이 아닐 경우 에러 코드를 사이드바에 표시
+        if response.status_code != 200:
+            st.sidebar.error(f"🚨 라이엇 서버 응답 에러 코드: {response.status_code}")
+            if response.status_code in [401, 403]:
+                st.sidebar.warning("💡 API 키가 만료되었거나 틀렸습니다. 키를 재발급받으세요!")
+            elif response.status_code == 404:
+                st.sidebar.warning("💡 닉네임과 태그를 가진 플레이어를 찾을 수 없습니다. 대소문자를 확인하세요!")
+            elif response.status_code == 429:
+                st.sidebar.warning("💡 요청이 너무 많습니다. 1~2분 뒤에 다시 시도하세요.")
+            return None
         return response.json()['puuid']
-    return None
+    except Exception as e:
+        st.sidebar.error(f"네트워크 연결 통신 실패: {e}")
+        return None
 
 def get_match_ids(puuid, count=20):
     """최근 매치 ID 리스트를 가져옵니다."""
@@ -34,7 +45,6 @@ def get_match_details(match_ids, target_puuid):
     headers = {"X-Riot-Token": RIOT_API_KEY}
     match_data = []
     
-    # 스트림릿 프로그레스 바 적용
     progress_bar = st.progress(0)
     for idx, match_id in enumerate(match_ids):
         url = f"https://{ACCOUNT_ROUTE}.api.riotgames.com/lol/match/v5/matches/{match_id}"
@@ -42,10 +52,8 @@ def get_match_details(match_ids, target_puuid):
         
         if resp.status_code == 200:
             info = resp.json().get('info', {})
-            # 참가자 중 target_puuid 찾기
             for participant in info.get('participants', []):
                 if participant['puuid'] == target_puuid:
-                    # 포지션 매핑 정제 (UTILITY -> SUPPORT)
                     role = participant.get('teamPosition', 'UNKNOWN')
                     if role == 'UTILITY': role = 'SUPPORT'
                     if role == '': role = 'UNKNOWN'
@@ -80,9 +88,7 @@ if st.sidebar.button("전적 검색"):
         with st.spinner("라이엇 서버에서 데이터를 불러오는 중..."):
             puuid = get_puuid(game_name, tag_line)
             
-            if not puuid:
-                st.error("플레이어를 찾을 수 없습니다. 닉네임, 태그 또는 API 키 만료 여부를 확인하세요.")
-            else:
+            if puuid:
                 match_ids = get_match_ids(puuid, count=match_count)
                 
                 if not match_ids:
@@ -107,19 +113,16 @@ if st.sidebar.button("전적 검색"):
                         # --- 화면 출력 ---
                         st.subheader(f"✨ {game_name} #{tag_line} 님의 최근 {total_games}경기 분석")
                         
-                        # 메트릭 대시보드 (기본 통계)
                         col1, col2, col3 = st.columns(3)
                         col1.metric("종합 승률", f"{win_rate:.1f}%", f"{wins}승 {losses}패")
                         col2.metric("평균 KDA", f"{kda:.2f}:1", f"{avg_k:.1f} / {avg_d:.1f} / {avg_a:.1f}")
                         
-                        # 포지션 추천 알고리즘 (가장 승률이 높은 포지션 선정)
                         role_stats = df.groupby('role').agg(
                             판수=('win', 'count'),
                             승리=('win', 'sum')
                         ).reset_index()
                         role_stats['승률'] = (role_stats['승리'] / role_stats['판수']) * 100
                         
-                        # UNKNOWN 제외하고 모스트 포지션 추천
                         valid_roles = role_stats[role_stats['role'] != 'UNKNOWN']
                         if not valid_roles.empty:
                             best_role = valid_roles.sort_values(by=['승률', '판수'], ascending=False).iloc[0]['role']
@@ -129,9 +132,7 @@ if st.sidebar.button("전적 검색"):
                         
                         st.markdown("---")
                         
-                        # 시각화 섹션
                         col_left, col_right = st.columns(2)
-                        
                         with col_left:
                             st.write("### 🧭 포지션 플레이 비율")
                             fig_pie = px.pie(df, names='role', title="최근 포지션 분포", hole=0.4,
@@ -145,7 +146,6 @@ if st.sidebar.button("전적 검색"):
                                              color='승률', color_continuous_scale='Blues')
                             st.plotly_chart(fig_bar, use_container_width=True)
                             
-                        # 최근 플레이한 챔피언 순위
                         st.write("### 🏆 최근 모스트 챔피언")
                         champ_counts = df['champion'].value_counts().reset_index()
                         champ_counts.columns = ['챔피언', '판수']
