@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.express as px
 
 # --- 설정 및 API 키 (본인의 API Key를 입력하세요) ---
-RIOT_API_KEY = "YOUR_RIOT_API_KEY_HERE" 
+RIOT_API_KEY = PGAPI-f2ce4526-c335-4dcb-a29b-2a77c49ca800
 
 # 지역 설정 (한국 기준)
 ACCOUNT_ROUTE = "asia"
