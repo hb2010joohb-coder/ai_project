@@ -3,10 +3,11 @@ import requests
 import pandas as pd
 import plotly.express as px
 
-# --- 설정 및 API 키 (본인의 API Key를 입력하세요) ---
-RIOT_API_KEY = "PGAPI-f2ce4526-c335-4dcb-a29b-2a77c49ca800"
+# --- 라이엇 API 키 설정 (보내주신 키 적용 완료) ---
+# 개발자 키는 24시간 후 만료되므로 에러 발생 시 재발급받아 이 부분을 교체하세요.
+RIOT_API_KEY = "RGAPI-f2ce4526-c335-4dcb-a29b-2a77c49ca800" 
 
-# 지역 설정 (한국 기준)
+# 지역 설정 (한국 서버 및 아시아 대륙 기준)
 ACCOUNT_ROUTE = "asia"
 GAME_ROUTE = "kr"
 
@@ -75,14 +76,12 @@ match_count = st.sidebar.slider("분석할 판 수", 5, 30, 10)
 if st.sidebar.button("전적 검색"):
     if not game_name or not tag_line:
         st.error("닉네임과 태그를 모두 입력해주세요.")
-    elif RIOT_API_KEY == "YOUR_RIOT_API_KEY_HERE":
-        st.warning("코드 내부의 RIOT_API_KEY를 실제 키로 변경해주세요.")
     else:
         with st.spinner("라이엇 서버에서 데이터를 불러오는 중..."):
             puuid = get_puuid(game_name, tag_line)
             
             if not puuid:
-                st.error("플레이어를 찾을 수 없습니다. 닉네임과 태그를 다시 확인하세요.")
+                st.error("플레이어를 찾을 수 없습니다. 닉네임, 태그 또는 API 키 만료 여부를 확인하세요.")
             else:
                 match_ids = get_match_ids(puuid, count=match_count)
                 
