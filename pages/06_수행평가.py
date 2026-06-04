@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.express as px
 
 # --- 라이엇 API 키 설정 ---
-RIOT_API_KEY = "RGAPI-d1297d7f-3c81-44d1-a22f-48cf2b0920cb" 
+RIOT_API_KEY = "RGAPI-49b97ffa-0a04-4276-81f5-efffa2937820" 
 
 ACCOUNT_ROUTE = "asia"
 GAME_ROUTE = "kr"
