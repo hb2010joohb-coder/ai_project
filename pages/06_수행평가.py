@@ -36,15 +36,13 @@ def get_champion_dict():
         # { 'Aatrox': '아트록스', 'LeeSin': '리 신' ... } 형태의 사전 구축
         champ_dict = {}
         for champ_id, info in champ_data.items():
-            # 라이엇 매치 데이터의 championName은 주로 info['name']이나 id와 매칭됨
             champ_dict[champ_id] = info['name']
-            # 간혹 대소문자나 공백이 꼬이는 경우를 대비해 소문자 키도 백업으로 등록
             champ_dict[champ_id.lower()] = info['name']
             
         return champ_dict
     except Exception as e:
         # 만약 인터넷 연결 문제 등으로 실패할 경우 가동될 최소한의 비상용 사전
-        return {"Aatrox": "아트록스", "LeeSin": "리 신", "Faker": "페이커"}
+        return {"Aatrox": "아트록스", "LeeSin": "리 신", "Ezreal": "이즈리얼"}
 
 def get_puuid(game_name, tag_line):
     """Riot ID로 유저의 고유 ID(PUUID)를 검색"""
@@ -100,7 +98,7 @@ def get_match_details(match_ids, target_puuid):
                     # 한글 직관적인 명칭으로 변환
                     role_ko = ROLE_TRANSLATION.get(raw_role, raw_role)
                     
-                    # 💡 [챔피언 한글화 핵심]: 영문 이름을 한국어 이름으로 변환 (사전에 없으면 영문 그대로 표기)
+                    # 영문 이름을 한국어 이름으로 변환 (사전에 없으면 영문 그대로 표기)
                     eng_champ_name = participant['championName']
                     kor_champ_name = champ_dict.get(eng_champ_name, champ_dict.get(eng_champ_name.lower(), eng_champ_name))
                     
@@ -111,7 +109,7 @@ def get_match_details(match_ids, target_puuid):
                         "kills": participant['kills'],
                         "deaths": participant['deaths'],
                         "assists": participant['assists'],
-                        "champion": kor_champ_name # 변환된 한국어 이름 삽입
+                        "champion": kor_champ_name
                     })
         progress_bar.progress((idx + 1) / len(match_ids), text=progress_text)
     progress_bar.empty()
@@ -200,9 +198,8 @@ if st.sidebar.button("실력 분석 시작"):
                         col_left, col_right = st.columns(2)
                         with col_left:
                             st.write("### 🧭 어떤 포지션을 주로 가나요?")
-                           # 기존의 px.colors.sequential.Pastel를 px.colors.qualitative.Pastel로 변경
-fig_pie = px.pie(df, names='role', hole=0.4,
-                 color_discrete_sequence=px.colors.qualitative.Pastel)
+                            # 💡 [들여쓰기 및 오타 수정 완료]: 한 줄로 길게 이어 붙여 가독성과 안정성을 확보했습니다.
+                            fig_pie = px.pie(df, names='role', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
                             st.plotly_chart(fig_pie, use_container_width=True)
                             
                         with col_right:
@@ -215,7 +212,6 @@ fig_pie = px.pie(df, names='role', hole=0.4,
                             
                         st.markdown("---")
                         
-                        # 💡 [출력 화면 확인]: 테이블에 표시되는 캐릭터 이름이 한국어로 출력됩니다.
                         st.write("### 🏆 최근 가장 자주 선택한 캐릭터(챔피언)")
                         st.caption("플레이어가 어떤 캐릭터를 선호하는지 보여줍니다.")
                         champ_counts = df['champion'].value_counts().reset_index()
