@@ -3,15 +3,22 @@ import requests
 import pandas as pd
 import plotly.express as px
 
-# --- 라이엇 API 키 설정 ---
-RIOT_API_KEY = "RGAPI-49b97ffa-0a04-4276-81f5-efffa2937820" 
+# --- 라이엇 API 키 설정 (스트림릿 보안 기능 활용) ---
+# 로컬에서는 .streamlit/secrets.toml 파일에서 불러오고, 
+# 배포 환경에서는 스트림릿 관리자 페이지 Secrets에서 불러옵니다.
+if "riot_api_key" in st.secrets:
+    RIOT_API_KEY = st.secrets["riot_api_key"]
+else:
+    st.sidebar.error("🚨 Riot API Key가 설정되지 않았습니다. 아래 개발 팁 가이드를 참조하세요.")
+    st.stop()
 
 ACCOUNT_ROUTE = "asia"
 GAME_ROUTE = "kr"
 
 def get_puuid(game_name, tag_line):
-    """Riot ID로 유저의 고유 ID(PUUID)를 가져옵니다. (에러 진단 추가)"""
-    url = f"https://{ACCOUNT_ROUTE}.api.riotgames.com/riot/account/v1/accounts/by-game-name/{game_name}/{tag_line}"
+    """Riot ID로 유저의 고유 ID(PUUID)를 가져옵니다. (라이엇 최신 API 주소 반영)"""
+    # 💡 [버그 수정]: 라이엇 API 규칙상 by-game-name이 아니라 by-riot-id가 올바른 엔드포인트 경로입니다.
+    url = f"https://{ACCOUNT_ROUTE}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     
     try:
@@ -22,7 +29,7 @@ def get_puuid(game_name, tag_line):
             if response.status_code in [401, 403]:
                 st.sidebar.warning("💡 API 키가 만료되었거나 틀렸습니다. 키를 재발급받으세요!")
             elif response.status_code == 404:
-                st.sidebar.warning("💡 닉네임과 태그를 가진 플레이어를 찾을 수 없습니다. 대소문자를 확인하세요!")
+                st.sidebar.warning("💡 닉네임과 태그를 가진 플레이어를 찾을 수 없습니다. 대소문자와 공백을 확인하세요!")
             elif response.status_code == 429:
                 st.sidebar.warning("💡 요청이 너무 많습니다. 1~2분 뒤에 다시 시도하세요.")
             return None
