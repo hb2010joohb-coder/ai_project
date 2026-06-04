@@ -200,8 +200,9 @@ if st.sidebar.button("실력 분석 시작"):
                         col_left, col_right = st.columns(2)
                         with col_left:
                             st.write("### 🧭 어떤 포지션을 주로 가나요?")
-                            fig_pie = px.pie(df, names='role', hole=0.4,
-                                             color_discrete_sequence=px.colors.sequential.Pastel)
+                           # 기존의 px.colors.sequential.Pastel를 px.colors.qualitative.Pastel로 변경
+fig_pie = px.pie(df, names='role', hole=0.4,
+                 color_discrete_sequence=px.colors.qualitative.Pastel)
                             st.plotly_chart(fig_pie, use_container_width=True)
                             
                         with col_right:
