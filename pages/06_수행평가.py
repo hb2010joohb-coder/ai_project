@@ -3,43 +3,70 @@ import requests
 import pandas as pd
 import plotly.express as px
 
-# --- 라이엇 API 키 설정 (스트림릿 보안 기능 활용) ---
-# 로컬에서는 .streamlit/secrets.toml 파일에서 불러오고, 
-# 배포 환경에서는 스트림릿 관리자 페이지 Secrets에서 불러옵니다.
+# --- 라이엇 API 키 설정 ---
 if "riot_api_key" in st.secrets:
     RIOT_API_KEY = st.secrets["riot_api_key"]
 else:
-    st.sidebar.error("🚨 Riot API Key가 설정되지 않았습니다. 아래 개발 팁 가이드를 참조하세요.")
+    st.sidebar.error("🚨 시스템 설정 오류: API 키를 찾을 수 없습니다.")
     st.stop()
 
 ACCOUNT_ROUTE = "asia"
-GAME_ROUTE = "kr"
+
+# 영문 포지션을 롤을 모르는 사람도 알기 쉽게 한글로 변환하는 사전
+ROLE_TRANSLATION = {
+    'TOP': '탑 (상단 라인 ⚔️)',
+    'JUNGLE': '정글 (사냥꾼 🌲)',
+    'MIDDLE': '미드 (중앙 라인 🔮)',
+    'BOTTOM': '원딜 (원거리 공격수 🎯)',
+    'SUPPORT': '서포터 (아군 지원 🛡️)',
+    'UNKNOWN': '기타/확인불가 ❓'
+}
+
+@st.cache_data
+def get_champion_dict():
+    """라이엇 데이터 드래곤에서 영문 챔피언 이름을 한국어 이름으로 바꾸는 사전을 가져옵니다."""
+    try:
+        # 최신 챔피언 데이터를 가져오기 위해 라이엇 공식 데이터 드래곤 API 호출 (한국어 설정)
+        version_url = "https://ddragon.leagueoflegends.com/api/versions.json"
+        latest_version = requests.get(version_url).json()[0]
+        
+        champ_url = f"https://ddragon.leagueoflegends.com/cdn/{latest_version}/data/ko_KR/champion.json"
+        champ_data = requests.get(champ_url).json()['data']
+        
+        # { 'Aatrox': '아트록스', 'LeeSin': '리 신' ... } 형태의 사전 구축
+        champ_dict = {}
+        for champ_id, info in champ_data.items():
+            # 라이엇 매치 데이터의 championName은 주로 info['name']이나 id와 매칭됨
+            champ_dict[champ_id] = info['name']
+            # 간혹 대소문자나 공백이 꼬이는 경우를 대비해 소문자 키도 백업으로 등록
+            champ_dict[champ_id.lower()] = info['name']
+            
+        return champ_dict
+    except Exception as e:
+        # 만약 인터넷 연결 문제 등으로 실패할 경우 가동될 최소한의 비상용 사전
+        return {"Aatrox": "아트록스", "LeeSin": "리 신", "Faker": "페이커"}
 
 def get_puuid(game_name, tag_line):
-    """Riot ID로 유저의 고유 ID(PUUID)를 가져옵니다. (라이엇 최신 API 주소 반영)"""
-    # 💡 [버그 수정]: 라이엇 API 규칙상 by-game-name이 아니라 by-riot-id가 올바른 엔드포인트 경로입니다.
+    """Riot ID로 유저의 고유 ID(PUUID)를 검색"""
     url = f"https://{ACCOUNT_ROUTE}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
-    
     try:
         response = requests.get(url, headers=headers)
-        # 200(정상)이 아닐 경우 에러 코드를 사이드바에 표시
         if response.status_code != 200:
-            st.sidebar.error(f"🚨 라이엇 서버 응답 에러 코드: {response.status_code}")
             if response.status_code in [401, 403]:
-                st.sidebar.warning("💡 API 키가 만료되었거나 틀렸습니다. 키를 재발급받으세요!")
+                st.sidebar.error("🔑 시스템 개발자 키가 만료되었습니다. 키를 갱신해주세요.")
             elif response.status_code == 404:
-                st.sidebar.warning("💡 닉네임과 태그를 가진 플레이어를 찾을 수 없습니다. 대소문자와 공백을 확인하세요!")
-            elif response.status_code == 429:
-                st.sidebar.warning("💡 요청이 너무 많습니다. 1~2분 뒤에 다시 시도하세요.")
+                st.sidebar.error("🔍 플레이어를 찾을 수 없습니다. 닉네임과 태그를 정확히 입력했는지 확인해주세요.")
+            else:
+                st.sidebar.error(f"서버 오류 발생 (코드: {response.status_code})")
             return None
         return response.json()['puuid']
     except Exception as e:
-        st.sidebar.error(f"네트워크 연결 통신 실패: {e}")
+        st.sidebar.error(f"통신 실패: {e}")
         return None
 
 def get_match_ids(puuid, count=20):
-    """최근 매치 ID 리스트를 가져옵니다."""
+    """최근 게임 기록 ID 가져오기"""
     url = f"https://{ACCOUNT_ROUTE}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids?start=0&count={count}"
     headers = {"X-Riot-Token": RIOT_API_KEY}
     response = requests.get(url, headers=headers)
@@ -48,11 +75,16 @@ def get_match_ids(puuid, count=20):
     return []
 
 def get_match_details(match_ids, target_puuid):
-    """매치 상세 정보에서 사용자의 승패 및 포지션 데이터를 추출합니다."""
+    """게임별 상세 성적 추출 및 초보자용 가이드 가공"""
     headers = {"X-Riot-Token": RIOT_API_KEY}
     match_data = []
     
-    progress_bar = st.progress(0)
+    # 한국어 챔피언 이름 사전 가져오기
+    champ_dict = get_champion_dict()
+    
+    progress_text = "플레이어의 최근 경기 기록을 분석하는 중입니다..."
+    progress_bar = st.progress(0, text=progress_text)
+    
     for idx, match_id in enumerate(match_ids):
         url = f"https://{ACCOUNT_ROUTE}.api.riotgames.com/lol/match/v5/matches/{match_id}"
         resp = requests.get(url, headers=headers)
@@ -61,54 +93,75 @@ def get_match_details(match_ids, target_puuid):
             info = resp.json().get('info', {})
             for participant in info.get('participants', []):
                 if participant['puuid'] == target_puuid:
-                    role = participant.get('teamPosition', 'UNKNOWN')
-                    if role == 'UTILITY': role = 'SUPPORT'
-                    if role == '': role = 'UNKNOWN'
+                    raw_role = participant.get('teamPosition', 'UNKNOWN')
+                    if raw_role == 'UTILITY': raw_role = 'SUPPORT'
+                    if raw_role == '': raw_role = 'UNKNOWN'
+                    
+                    # 한글 직관적인 명칭으로 변환
+                    role_ko = ROLE_TRANSLATION.get(raw_role, raw_role)
+                    
+                    # 💡 [챔피언 한글화 핵심]: 영문 이름을 한국어 이름으로 변환 (사전에 없으면 영문 그대로 표기)
+                    eng_champ_name = participant['championName']
+                    kor_champ_name = champ_dict.get(eng_champ_name, champ_dict.get(eng_champ_name.lower(), eng_champ_name))
                     
                     match_data.append({
-                        "win": participant['win'],
-                        "role": role,
+                        "win": "승리 🎉" if participant['win'] else "패배 💧",
+                        "win_bool": participant['win'],
+                        "role": role_ko,
                         "kills": participant['kills'],
                         "deaths": participant['deaths'],
                         "assists": participant['assists'],
-                        "champion": participant['championName']
+                        "champion": kor_champ_name # 변환된 한국어 이름 삽입
                     })
-        progress_bar.progress((idx + 1) / len(match_ids))
+        progress_bar.progress((idx + 1) / len(match_ids), text=progress_text)
     progress_bar.empty()
     return pd.DataFrame(match_data)
 
-# --- 스트림릿 UI 레이아웃 ---
-st.set_page_config(page_title="LoL 전적 및 포지션 분석기", layout="wide")
-st.title("🎮 LoL 전적 및 포지션 분석 대시보드")
-st.caption("Riot API와 Streamlit을 이용한 실시간 유저 데이터 분석")
+# --- 스트림릿 웹 화면 구성 ---
+st.set_page_config(page_title="누구나 보는 LoL 전적 분석기", layout="wide")
 
-# 사이드바 검색창
+st.title("🎮 누구나 쉽게 보는 롤(LoL) 전적 대시보드")
+st.caption("어려운 게임 용어 대신, 누구나 한눈에 플레이어의 실력을 파악할 수 있도록 도와주는 분석기입니다.")
+
+# 도움말 가이드 상자
+with st.expander("💡 롤을 잘 모르시는 분들을 위한 용어 설명 가이드", expanded=False):
+    st.markdown("""
+    * **승률**: 전체 판 수 중 이긴 게임의 비율입니다. **50%를 넘으면 1인분 이상** 잘하고 있다는 뜻입니다.
+    * **KDA (전투 효율)**: 내가 적을 쓰러뜨리거나(K) 도운 횟수(A)를 내가 쓰러진 횟수(D)로 나눈 점수입니다. 
+      * 🟥 **2.0 미만**: 조금 힘겨운 경기를 펼치고 있어요.
+      * 🟨 **2.0 ~ 3.5**: 자기 역할을 평범하게 잘 수행하고 있어요.
+      * 🟩 **3.5 이상**: 팀을 승리로 이끄는 에이스(Ace) 역할을 하고 있어요!
+    * **포지션(라인)**: 축구의 공격수, 미드필더, 수비수처럼 롤에도 5가지 역할 분담이 있습니다.
+    """)
+
+# 사이드바 입력창
 st.sidebar.header("🔍 플레이어 검색")
-game_name = st.sidebar.text_input("Riot ID (닉네임)", placeholder="예: Hide on bush")
-tag_line = st.sidebar.text_input("Tagline (태그)", placeholder="예: KR1")
-match_count = st.sidebar.slider("분석할 판 수", 5, 30, 10)
+st.sidebar.info("게임 안에서 보이는 '닉네임'과 '태그(#KR1 등)'를 따로 나누어 입력해주세요.")
+game_name = st.sidebar.text_input("닉네임 (Riot ID)", placeholder="예: Hide on bush")
+tag_line = st.sidebar.text_input("태그 (Tagline)", placeholder="예: KR1")
+match_count = st.sidebar.slider("분석할 경기 수 (많을수록 정확해요)", 5, 20, 10)
 
-if st.sidebar.button("전적 검색"):
+if st.sidebar.button("실력 분석 시작"):
     if not game_name or not tag_line:
-        st.error("닉네임과 태그를 모두 입력해주세요.")
+        st.error("닉네임과 태그를 모두 정확히 입력하셔야 분석이 가능합니다.")
     else:
-        with st.spinner("라이엇 서버에서 데이터를 불러오는 중..."):
+        with st.spinner("라이엇 서버에서 데이터를 안전하게 가져오는 중..."):
             puuid = get_puuid(game_name, tag_line)
             
             if puuid:
                 match_ids = get_match_ids(puuid, count=match_count)
                 
                 if not match_ids:
-                    st.warning("최근 진행한 게임이 없습니다.")
+                    st.warning("최근에 진행한 게임 기록이 없는 플레이어입니다.")
                 else:
                     df = get_match_details(match_ids, puuid)
                     
                     if df.empty:
-                        st.error("매치 상세 정보를 가져오는데 실패했습니다.")
+                        st.error("상세 경기 정보를 불러오지 못했습니다. 다시 시도해주세요.")
                     else:
-                        # --- 데이터 연산 ---
+                        # --- 데이터 계산 ---
                         total_games = len(df)
-                        wins = df['win'].sum()
+                        wins = df['win_bool'].sum()
                         losses = total_games - wins
                         win_rate = (wins / total_games) * 100
                         
@@ -117,43 +170,53 @@ if st.sidebar.button("전적 검색"):
                         avg_a = df['assists'].mean()
                         kda = (avg_k + avg_a) / avg_d if avg_d != 0 else (avg_k + avg_a)
                         
-                        # --- 화면 출력 ---
-                        st.subheader(f"✨ {game_name} #{tag_line} 님의 최근 {total_games}경기 분석")
+                        if kda >= 3.5: kda_eval = "👑 매우 뛰어남 (팀의 에이스)"
+                        elif kda >= 2.0: kda_eval = "🏃 준수함 (평균적인 활약)"
+                        else: kda_eval = "📉 다소 아쉬움 (집중 수련 필요)"
+                        
+                        # --- 화면 결과 출력 ---
+                        st.markdown(f"## ✨ **{game_name} #{tag_line}** 님의 실력 요약 보고서")
+                        st.write(f"최근 진행한 **{total_games}경기**를 바탕으로 분석한 결과입니다.")
                         
                         col1, col2, col3 = st.columns(3)
-                        col1.metric("종합 승률", f"{win_rate:.1f}%", f"{wins}승 {losses}패")
-                        col2.metric("평균 KDA", f"{kda:.2f}:1", f"{avg_k:.1f} / {avg_d:.1f} / {avg_a:.1f}")
+                        col1.metric("📊 종합 승률", f"{win_rate:.1f}%", f"{wins}번 이기고 {losses}번 짐")
+                        col2.metric("⚔️ 전투 효율 (KDA)", f"{kda:.2f} 점", kda_eval)
                         
                         role_stats = df.groupby('role').agg(
-                            판수=('win', 'count'),
-                            승리=('win', 'sum')
+                            판수=('win_bool', 'count'),
+                            승리=('win_bool', 'sum')
                         ).reset_index()
                         role_stats['승률'] = (role_stats['승리'] / role_stats['판수']) * 100
                         
-                        valid_roles = role_stats[role_stats['role'] != 'UNKNOWN']
+                        valid_roles = role_stats[role_stats['role'] != '기타/확인불가 ❓']
                         if not valid_roles.empty:
                             best_role = valid_roles.sort_values(by=['승률', '판수'], ascending=False).iloc[0]['role']
-                            col3.metric("🔥 추천 포지션", best_role, "최근 승률 기준 베스트")
+                            col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], "승률이 가장 높음")
                         else:
-                            col3.metric("🔥 추천 포지션", "데이터 부족")
+                            col3.metric("🔥 가장 자신 있는 포지션", "정보 없음")
                         
                         st.markdown("---")
                         
                         col_left, col_right = st.columns(2)
                         with col_left:
-                            st.write("### 🧭 포지션 플레이 비율")
-                            fig_pie = px.pie(df, names='role', title="최근 포지션 분포", hole=0.4,
-                                             color_discrete_sequence=px.colors.sequential.RdBu)
+                            st.write("### 🧭 어떤 포지션을 주로 가나요?")
+                            fig_pie = px.pie(df, names='role', hole=0.4,
+                                             color_discrete_sequence=px.colors.sequential.Pastel)
                             st.plotly_chart(fig_pie, use_container_width=True)
                             
                         with col_right:
-                            st.write("### 📊 포지션별 승률 통계")
+                            st.write("### 📈 각 포지션별 승률은 어떤가요?")
                             fig_bar = px.bar(role_stats, x='role', y='승률', text=role_stats['승률'].apply(lambda x: f"{x:.1f}%"),
-                                             title="포지션별 승률 (%)", labels={'승률': '승률 (%)', 'role': '라인'},
-                                             color='승률', color_continuous_scale='Blues')
+                                             labels={'승률': '승리 확률 (%)', 'role': '포지션 위치'},
+                                             color='승률', color_continuous_scale='YlGnBu')
+                            fig_bar.update_yaxes(range=[0, 100])
                             st.plotly_chart(fig_bar, use_container_width=True)
                             
-                        st.write("### 🏆 최근 모스트 챔피언")
+                        st.markdown("---")
+                        
+                        # 💡 [출력 화면 확인]: 테이블에 표시되는 캐릭터 이름이 한국어로 출력됩니다.
+                        st.write("### 🏆 최근 가장 자주 선택한 캐릭터(챔피언)")
+                        st.caption("플레이어가 어떤 캐릭터를 선호하는지 보여줍니다.")
                         champ_counts = df['champion'].value_counts().reset_index()
-                        champ_counts.columns = ['챔피언', '판수']
-                        st.dataframe(champ_counts, use_container_width=True)
+                        champ_counts.columns = ['캐릭터 이름 👤', '플레이 횟수 (판)']
+                        st.dataframe(champ_counts, use_container_width=True, hide_index=True)
