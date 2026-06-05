@@ -109,7 +109,7 @@ def get_match_details(match_ids, target_puuid):
                         "deaths": participant['deaths'],
                         "assists": participant['assists'],
                         "champion": kor_champ_name,
-                        "match_index": len(match_ids) - idx # 그래프 순서용 지표
+                        "match_index": len(match_ids) - idx
                     })
         progress_bar.progress((idx + 1) / len(match_ids), text=progress_text)
     progress_bar.empty()
@@ -128,8 +128,28 @@ with st.expander("💡 롤알못을 위한 가이드북", expanded=False):
     * **승/패 타일맵**: 최근 경기 결과를 바둑판처럼 나열한 것입니다. 연속된 색상을 통해 최근 컨디션 흐름을 볼 수 있습니다.
     """)
 
-# 사이드바
+# --- 사이드바 및 유명인 검색 가이드 추가 ---
 st.sidebar.header("🔍 대상 플레이어 입력")
+
+# 💡 [롤알못 맞춤형 기능]: 유명 프로게이머/인플루언서의 닉네임과 태그 추천 가이드판 배치
+with st.sidebar.expander("🌟 추천! 유명인 검색 가이드", expanded=True):
+    st.markdown("""
+    아래 정보를 **닉네임**과 **태그** 칸에 그대로 복사해서 넣어보세요!
+    
+    * **페이커 (세계 최고 고트 프로게이머)**
+      * 닉네임: `Hide on bush`
+      * 태그: `KR1`
+    * **쵸비 (현역 최정상급 프로게이머)**
+      * 닉네임: `지각하지마라`
+      * 태그: `KR1`
+    * **쇼메이커 (인기 프로게이머)**
+      * 닉네임: `DDKING`
+      * 태그: `KR1`
+    * **제우스 (인기 탑 프로게이머)**
+      * 닉네임: `우제입니다`
+      * 태그: `KR1`
+    """)
+
 game_name = st.sidebar.text_input("닉네임", placeholder="예: Hide on bush")
 tag_line = st.sidebar.text_input("태그", placeholder="예: KR1")
 match_count = st.sidebar.slider("추적할 경기 수", min_value=5, max_value=100, value=20, step=5)
@@ -182,7 +202,6 @@ if st.sidebar.button("실력 정밀 프로파일링 시작", type="primary"):
                         col1, col2, col3 = st.columns(3)
                         col1.metric("📊 종합 승률", f"{win_rate:.1f}%", f"{wins}승 {losses}패")
                         
-                        # KDA 세부 매칭 문구
                         kda_eval = "👑 최고 존엄 에이스" if kda >= 3.5 else ("🏃 자기 몫 해내는 중" if kda >= 2.0 else "📉 현재 집중력 저하 상태")
                         col2.metric("⚔️ 평균 전투 점수 (KDA)", f"{kda:.2f}", f"{avg_k:.1f} / {avg_d:.1f} / {avg_a:.1f} ({kda_eval})")
                         
@@ -207,12 +226,12 @@ if st.sidebar.button("실력 정밀 프로파일링 시작", type="primary"):
                                 bg_color = "#11998e" if row['win_bool'] else "#cb2d3e"
                                 st.markdown(f"<div style='background-color:{bg_color}; color:white; text-align:center; padding:12px 4px; border-radius:6px; font-weight:bold; font-size:11px; box-shadow: 1px 1px 3px rgba(0,0,0,0.15);'>{row['win']}</div>", unsafe_allow_html=True)
                         
-                        # ✨ [업그레이드 3.0 신규 지표 차트: 경기별 전투 변동 트렌드]
+                        # 경기별 전투 변동 트렌드
                         st.markdown("---")
                         st.write("### 📈 최근 경기별 실력 변동 그래프")
                         st.caption("경기를 거듭하며 기록한 킬(적 처치)과 데스(본인 탈락)의 추이 변화입니다. 두 선의 격차가 벌어질수록 활약한 경기입니다.")
                         
-                        trend_df = df.iloc[::-1].reset_index() # 시간 순서대로 정렬 (과거 -> 현재)
+                        trend_df = df.iloc[::-1].reset_index()
                         fig_trend = go.Figure()
                         fig_trend.add_trace(go.Scatter(x=trend_df.index+1, y=trend_df['kills'], mode='lines+markers', name='공격력 (Kill)', line=dict(color='#2196F3', width=3)))
                         fig_trend.add_trace(go.Scatter(x=trend_df.index+1, y=trend_df['deaths'], mode='lines+markers', name='탈락 횟수 (Death)', line=dict(color='#E91E63', width=2, dash='dash')))
