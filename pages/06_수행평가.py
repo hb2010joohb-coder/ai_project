@@ -18,22 +18,19 @@ ROLE_TRANSLATION = {
     'JUNGLE': '정글 (사냥꾼 🌲)',
     'MIDDLE': '미드 (중앙 라인 🔮)',
     'BOTTOM': '원딜 (원거리 공격수 🎯)',
-    'SUPPORT': '서포터 (아군 지원 🛡️)',
-    'UNKNOWN': '기타/확인불가 ❓'
+    'SUPPORT': '서포터 (아군 지원 🛡️)'
 }
 
 @st.cache_data
 def get_champion_dict():
     """라이엇 데이터 드래곤에서 영문 챔피언 이름을 한국어 이름으로 바꾸는 사전을 가져옵니다."""
     try:
-        # 최신 챔피언 데이터를 가져오기 위해 라이엇 공식 데이터 드래곤 API 호출 (한국어 설정)
         version_url = "https://ddragon.leagueoflegends.com/api/versions.json"
         latest_version = requests.get(version_url).json()[0]
         
         champ_url = f"https://ddragon.leagueoflegends.com/cdn/{latest_version}/data/ko_KR/champion.json"
         champ_data = requests.get(champ_url).json()['data']
         
-        # { 'Aatrox': '아트록스', 'LeeSin': '리 신' ... } 형태의 사전 구축
         champ_dict = {}
         for champ_id, info in champ_data.items():
             champ_dict[champ_id] = info['name']
@@ -41,7 +38,6 @@ def get_champion_dict():
             
         return champ_dict
     except Exception as e:
-        # 만약 인터넷 연결 문제 등으로 실패할 경우 가동될 최소한의 비상용 사전
         return {"Aatrox": "아트록스", "LeeSin": "리 신", "Ezreal": "이즈리얼"}
 
 def get_puuid(game_name, tag_line):
@@ -77,7 +73,6 @@ def get_match_details(match_ids, target_puuid):
     headers = {"X-Riot-Token": RIOT_API_KEY}
     match_data = []
     
-    # 한국어 챔피언 이름 사전 가져오기
     champ_dict = get_champion_dict()
     
     progress_text = "플레이어의 최근 경기 기록을 분석하는 중입니다..."
@@ -93,12 +88,12 @@ def get_match_details(match_ids, target_puuid):
                 if participant['puuid'] == target_puuid:
                     raw_role = participant.get('teamPosition', 'UNKNOWN')
                     if raw_role == 'UTILITY': raw_role = 'SUPPORT'
-                    if raw_role == '': raw_role = 'UNKNOWN'
                     
-                    # 한글 직관적인 명칭으로 변환
+                    # 💡 [필터링 완화/수정]: 포지션이 없거나 불명확한 특수 모드 데이터는 수집 단계에서 건너뜁니다.
+                    if raw_role in ['', 'UNKNOWN', 'INDIVIDUAL']:
+                        continue
+                    
                     role_ko = ROLE_TRANSLATION.get(raw_role, raw_role)
-                    
-                    # 영문 이름을 한국어 이름으로 변환 (사전에 없으면 영문 그대로 표기)
                     eng_champ_name = participant['championName']
                     kor_champ_name = champ_dict.get(eng_champ_name, champ_dict.get(eng_champ_name.lower(), eng_champ_name))
                     
@@ -121,7 +116,6 @@ st.set_page_config(page_title="누구나 보는 LoL 전적 분석기", layout="w
 st.title("🎮 누구나 쉽게 보는 롤(LoL) 전적 대시보드")
 st.caption("어려운 게임 용어 대신, 누구나 한눈에 플레이어의 실력을 파악할 수 있도록 도와주는 분석기입니다.")
 
-# 도움말 가이드 상자
 with st.expander("💡 롤을 잘 모르시는 분들을 위한 용어 설명 가이드", expanded=False):
     st.markdown("""
     * **승률**: 전체 판 수 중 이긴 게임의 비율입니다. **50%를 넘으면 1인분 이상** 잘하고 있다는 뜻입니다.
@@ -137,7 +131,7 @@ st.sidebar.header("🔍 플레이어 검색")
 st.sidebar.info("게임 안에서 보이는 '닉네임'과 '태그(#KR1 등)'를 따로 나누어 입력해주세요.")
 game_name = st.sidebar.text_input("닉네임 (Riot ID)", placeholder="예: Hide on bush")
 tag_line = st.sidebar.text_input("태그 (Tagline)", placeholder="예: KR1")
-match_count = st.sidebar.slider("분석할 경기 수 (많을수록 정확해요)", 5, 20, 10)
+match_count = st.sidebar.slider("분석할 경기 수 (많을수록 정확해요)", 5, 20, 15) # 통계 꼬임 방지를 위해 기본 디폴트를 15판으로 상향
 
 if st.sidebar.button("실력 분석 시작"):
     if not game_name or not tag_line:
@@ -155,7 +149,7 @@ if st.sidebar.button("실력 분석 시작"):
                     df = get_match_details(match_ids, puuid)
                     
                     if df.empty:
-                        st.error("상세 경기 정보를 불러오지 못했습니다. 다시 시도해주세요.")
+                        st.error("정규 포지션 데이터(소환사의 협곡 게임 기록)가 부족하여 분석할 수 없습니다. 최근에 칼바람 나락이나 이벤트 모드만 플레이했는지 확인해보세요.")
                     else:
                         # --- 데이터 계산 ---
                         total_games = len(df)
@@ -174,31 +168,35 @@ if st.sidebar.button("실력 분석 시작"):
                         
                         # --- 화면 결과 출력 ---
                         st.markdown(f"## ✨ **{game_name} #{tag_line}** 님의 실력 요약 보고서")
-                        st.write(f"최근 진행한 **{total_games}경기**를 바탕으로 분석한 결과입니다.")
+                        st.write(f"최근 진행한 정규 포지션 **{total_games}경기**를 바탕으로 분석한 결과입니다.")
                         
                         col1, col2, col3 = st.columns(3)
                         col1.metric("📊 종합 승률", f"{win_rate:.1f}%", f"{wins}번 이기고 {losses}번 짐")
                         col2.metric("⚔️ 전투 효율 (KDA)", f"{kda:.2f} 점", kda_eval)
                         
+                        # 포지션별 통계 연산
                         role_stats = df.groupby('role').agg(
                             판수=('win_bool', 'count'),
                             승리=('win_bool', 'sum')
                         ).reset_index()
                         role_stats['승률'] = (role_stats['승리'] / role_stats['판수']) * 100
                         
-                        valid_roles = role_stats[role_stats['role'] != '기타/확인불가 ❓']
-                        if not valid_roles.empty:
-                            best_role = valid_roles.sort_values(by=['승률', '판수'], ascending=False).iloc[0]['role']
-                            col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], "승률이 가장 높음")
+                        # 💡 [추천 알고리즘 수정]: 표본 신뢰도를 위해 최소 2판 이상 플레이한 포지션 중에서만 최고 승률 베스트 추천을 뽑습니다.
+                        reliable_roles = role_stats[role_stats['판수'] >= 2]
+                        
+                        if not reliable_roles.empty:
+                            best_role = reliable_roles.sort_values(by=['승률', '판수'], ascending=False).iloc[0]['role']
+                            col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], "최소 2판 이상 수행 기준 베스트")
                         else:
-                            col3.metric("🔥 가장 자신 있는 포지션", "정보 없음")
+                            # 만약 모든 포지션을 각각 1판씩만 다 다르게 했다면 전체 중 최고 성능을 보여줍니다.
+                            best_role = role_stats.sort_values(by=['승률', '판수'], ascending=False).iloc[0]['role']
+                            col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], "단판 플레이 기준 최고 승률")
                         
                         st.markdown("---")
                         
                         col_left, col_right = st.columns(2)
                         with col_left:
                             st.write("### 🧭 어떤 포지션을 주로 가나요?")
-                            # 💡 [들여쓰기 및 오타 수정 완료]: 한 줄로 길게 이어 붙여 가독성과 안정성을 확보했습니다.
                             fig_pie = px.pie(df, names='role', hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
                             st.plotly_chart(fig_pie, use_container_width=True)
                             
