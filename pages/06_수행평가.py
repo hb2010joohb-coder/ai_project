@@ -12,12 +12,12 @@ else:
 
 ACCOUNT_ROUTE = "asia"
 
-# 영문 포지션을 한글로 변환하는 사전 (대문자 기준)
+# 영문 포지션을 한글로 변환하는 사전
 ROLE_TRANSLATION = {
     'TOP': '탑 (상단 라인 ⚔️)',
     'JUNGLE': '정글 (사냥꾼 🌲)',
     'MIDDLE': '미드 (중앙 라인 🔮)',
-    'MID': '미드 (중앙 라인 🔮)',       # 💡 혹시 모를 축약형 대비 추가
+    'MID': '미드 (중앙 라인 🔮)',
     'BOTTOM': '원딜 (원거리 공격수 🎯)',
     'SUPPORT': '서포터 (아군 지원 🛡️)'
 }
@@ -76,7 +76,8 @@ def get_match_details(match_ids, target_puuid):
     
     champ_dict = get_champion_dict()
     
-    progress_text = "플레이어의 최근 경기 기록을 분석하는 중입니다..."
+    # 경기 수에 유연하게 대응할 수 있도록 텍스트 수정
+    progress_text = f"플레이어의 최근 {len(match_ids)}경기 기록을 심층 분석하는 중입니다..."
     progress_bar = st.progress(0, text=progress_text)
     
     for idx, match_id in enumerate(match_ids):
@@ -87,16 +88,19 @@ def get_match_details(match_ids, target_puuid):
             info = resp.json().get('info', {})
             for participant in info.get('participants', []):
                 if participant['puuid'] == target_puuid:
-                    # 💡 대소문자 꼬임 방지를 위해 upper()로 강제 대문자 변환
-                    raw_role = str(participant.get('teamPosition', 'UNKNOWN')).upper().strip()
+                    # 💡 [미드 누락 방지 강화]: teamPosition이 비어있으면 individualPosition을 대안으로 가져옵니다.
+                    raw_role = participant.get('teamPosition', '')
+                    if not raw_role or raw_role == 'UNKNOWN':
+                        raw_role = participant.get('individualPosition', 'UNKNOWN')
+                    
+                    raw_role = str(raw_role).upper().strip()
                     
                     if raw_role == 'UTILITY': raw_role = 'SUPPORT'
                     
-                    # 칼바람 등 완전 무작위 모드에서 발생하는 무효 데이터만 스킵
+                    # 무효 데이터 스킵
                     if raw_role in ['', 'UNKNOWN', 'INDIVIDUAL', 'NONE']:
                         continue
                     
-                    # 사전에 등록된 한글명이 있으면 바꾸고, 없으면 영문 그대로 노출해서 누락 방지
                     role_ko = ROLE_TRANSLATION.get(raw_role, f"{raw_role} (기타 라인)")
                     
                     eng_champ_name = participant['championName']
@@ -136,7 +140,9 @@ st.sidebar.header("🔍 플레이어 검색")
 st.sidebar.info("게임 안에서 보이는 '닉네임'과 '태그(#KR1 등)'를 따로 나누어 입력해주세요.")
 game_name = st.sidebar.text_input("닉네임 (Riot ID)", placeholder="예: Hide on bush")
 tag_line = st.sidebar.text_input("태그 (Tagline)", placeholder="예: KR1")
-match_count = st.sidebar.slider("분석할 경기 수 (많을수록 정확해요)", 5, 20, 15)
+
+# 💡 [판 수 확장]: 최대 100판까지 검색이 가능하도록 범위를 슬라이더에 반영했습니다.
+match_count = st.sidebar.slider("분석할 경기 수 (많을수록 정확해요)", min_value=5, max_value=100, value=20, step=5)
 
 if st.sidebar.button("실력 분석 시작"):
     if not game_name or not tag_line:
@@ -186,15 +192,17 @@ if st.sidebar.button("실력 분석 시작"):
                         ).reset_index()
                         role_stats['승률'] = (role_stats['승리'] / role_stats['판수']) * 100
                         
-                        # 추천 알고리즘 (최소 2판 이상 기준)
-                        reliable_roles = role_stats[role_stats['판수'] >= 2]
+                        # 추천 알고리즘 (총 게임 수 비례 표본 안정성 확보)
+                        # 100판일 때는 최소 5판 이상 수행 기준, 판 수가 적을 때는 최소 2판 기준으로 유연하게 가동
+                        min_match_limit = 5 if total_games >= 50 else 2
+                        reliable_roles = role_stats[role_stats['판수'] >= min_match_limit]
                         
                         if not reliable_roles.empty:
                             best_role = reliable_roles.sort_values(by=['승률', '판수'], ascending=False).iloc[0]['role']
-                            col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], "최소 2판 이상 수행 기준 베스트")
+                            col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], f"최소 {min_match_limit}판 이상 수행 기준 베스트")
                         else:
                             best_role = role_stats.sort_values(by=['승률', '판수'], ascending=False).iloc[0]['role']
-                            col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], "단판 플레이 기준 최고 승률")
+                            col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], "플레이 기준 최고 승률")
                         
                         st.markdown("---")
                         
