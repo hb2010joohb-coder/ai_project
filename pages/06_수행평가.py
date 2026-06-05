@@ -12,11 +12,12 @@ else:
 
 ACCOUNT_ROUTE = "asia"
 
-# 영문 포지션을 롤을 모르는 사람도 알기 쉽게 한글로 변환하는 사전
+# 영문 포지션을 한글로 변환하는 사전 (대문자 기준)
 ROLE_TRANSLATION = {
     'TOP': '탑 (상단 라인 ⚔️)',
     'JUNGLE': '정글 (사냥꾼 🌲)',
     'MIDDLE': '미드 (중앙 라인 🔮)',
+    'MID': '미드 (중앙 라인 🔮)',       # 💡 혹시 모를 축약형 대비 추가
     'BOTTOM': '원딜 (원거리 공격수 🎯)',
     'SUPPORT': '서포터 (아군 지원 🛡️)'
 }
@@ -86,14 +87,18 @@ def get_match_details(match_ids, target_puuid):
             info = resp.json().get('info', {})
             for participant in info.get('participants', []):
                 if participant['puuid'] == target_puuid:
-                    raw_role = participant.get('teamPosition', 'UNKNOWN')
+                    # 💡 대소문자 꼬임 방지를 위해 upper()로 강제 대문자 변환
+                    raw_role = str(participant.get('teamPosition', 'UNKNOWN')).upper().strip()
+                    
                     if raw_role == 'UTILITY': raw_role = 'SUPPORT'
                     
-                    # 💡 [필터링 완화/수정]: 포지션이 없거나 불명확한 특수 모드 데이터는 수집 단계에서 건너뜁니다.
-                    if raw_role in ['', 'UNKNOWN', 'INDIVIDUAL']:
+                    # 칼바람 등 완전 무작위 모드에서 발생하는 무효 데이터만 스킵
+                    if raw_role in ['', 'UNKNOWN', 'INDIVIDUAL', 'NONE']:
                         continue
                     
-                    role_ko = ROLE_TRANSLATION.get(raw_role, raw_role)
+                    # 사전에 등록된 한글명이 있으면 바꾸고, 없으면 영문 그대로 노출해서 누락 방지
+                    role_ko = ROLE_TRANSLATION.get(raw_role, f"{raw_role} (기타 라인)")
+                    
                     eng_champ_name = participant['championName']
                     kor_champ_name = champ_dict.get(eng_champ_name, champ_dict.get(eng_champ_name.lower(), eng_champ_name))
                     
@@ -131,7 +136,7 @@ st.sidebar.header("🔍 플레이어 검색")
 st.sidebar.info("게임 안에서 보이는 '닉네임'과 '태그(#KR1 등)'를 따로 나누어 입력해주세요.")
 game_name = st.sidebar.text_input("닉네임 (Riot ID)", placeholder="예: Hide on bush")
 tag_line = st.sidebar.text_input("태그 (Tagline)", placeholder="예: KR1")
-match_count = st.sidebar.slider("분석할 경기 수 (많을수록 정확해요)", 5, 20, 15) # 통계 꼬임 방지를 위해 기본 디폴트를 15판으로 상향
+match_count = st.sidebar.slider("분석할 경기 수 (많을수록 정확해요)", 5, 20, 15)
 
 if st.sidebar.button("실력 분석 시작"):
     if not game_name or not tag_line:
@@ -149,7 +154,7 @@ if st.sidebar.button("실력 분석 시작"):
                     df = get_match_details(match_ids, puuid)
                     
                     if df.empty:
-                        st.error("정규 포지션 데이터(소환사의 협곡 게임 기록)가 부족하여 분석할 수 없습니다. 최근에 칼바람 나락이나 이벤트 모드만 플레이했는지 확인해보세요.")
+                        st.error("분석할 수 있는 정규 라인전 기록이 부족합니다. 최근에 칼바람 나락 모드만 플레이했는지 확인해보세요.")
                     else:
                         # --- 데이터 계산 ---
                         total_games = len(df)
@@ -181,14 +186,13 @@ if st.sidebar.button("실력 분석 시작"):
                         ).reset_index()
                         role_stats['승률'] = (role_stats['승리'] / role_stats['판수']) * 100
                         
-                        # 💡 [추천 알고리즘 수정]: 표본 신뢰도를 위해 최소 2판 이상 플레이한 포지션 중에서만 최고 승률 베스트 추천을 뽑습니다.
+                        # 추천 알고리즘 (최소 2판 이상 기준)
                         reliable_roles = role_stats[role_stats['판수'] >= 2]
                         
                         if not reliable_roles.empty:
                             best_role = reliable_roles.sort_values(by=['승률', '판수'], ascending=False).iloc[0]['role']
                             col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], "최소 2판 이상 수행 기준 베스트")
                         else:
-                            # 만약 모든 포지션을 각각 1판씩만 다 다르게 했다면 전체 중 최고 성능을 보여줍니다.
                             best_role = role_stats.sort_values(by=['승률', '판수'], ascending=False).iloc[0]['role']
                             col3.metric("🔥 가장 자신 있는 포지션", best_role.split(" (")[0], "단판 플레이 기준 최고 승률")
                         
